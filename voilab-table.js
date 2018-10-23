@@ -74,6 +74,18 @@ var lodash = require('lodash'),
         self.emitter.emit('cell-border-added', self, column, row, isHeader);
     },
 
+    getCellWidth = function(self, column, row) {
+        const colSpan = row._renderedContent.colSpan[column.id] || 1;
+        const columnIndex = self.getColumns().indexOf(column);
+        if(colSpan && colSpan > 1) {
+            const nextCells = self.getColumns().slice(columnIndex, columnIndex+colSpan);
+            return nextCells.reduce((sum,col)=>{
+                return sum + col.width;
+            },0);
+        }
+        return column.width;
+    },
+
     addCell = function (self, column, row, pos, isHeader) {
         var width = column.width,
             padding = {
@@ -86,13 +98,7 @@ var lodash = require('lodash'),
             y = pos.y,
             x = pos.x;
 
-        if(colSpan && colSpan > 1) {
-            const columnIndex = self.getColumns().indexOf(column);
-            const nextCells = self.getColumns().slice(columnIndex, columnIndex+colSpan);
-            width = nextCells.reduce((sum,col)=>{
-                return sum + col.width;
-            },0);
-        }
+        width = getCellWidth(self, column, row);
 
         // Top and bottom padding (only if valign is not set)
         if (!column.valign) {
@@ -197,12 +203,18 @@ var lodash = require('lodash'),
         row._renderedContent = {data: {}, dataHeight: {}, contentHeight: {}, colSpan: {}};
 
         lodash.forEach(self.getColumns(), function (column) {
-            var renderer = isHeader ? column.headerRenderer : column.renderer,
-                content = renderer ? renderer(self, row, false) : row[column.id],
-                height = !content ? 1 : self.pdf.heightOfString(content, lodash.assign(lodash.clone(column), {
-                    width: column.width - getPaddingValue('horizontal', column.padding)
+            var renderer = isHeader ? column.headerRenderer : column.renderer;
+            var content = renderer ? renderer(self, row, false) : row[column.id];
+            row._renderedContent.colSpan[column.id] = Object.isObject(content) ? content.colSpan : 1;
+            if(Object.isObject(content)) {
+                content = content.content;
+            }
+            var height = !content ? 1 : self.pdf.heightOfString(content, lodash.assign(lodash.clone(column), {
+                    width: getCellWidth(self,column,row) - getPaddingValue('horizontal', column.padding)
                 })),
                 column_height = isHeader ? column.headerHeight : column.height;
+
+
 
             // Ssetup the content height
             row._renderedContent.contentHeight[column.id] = height;
@@ -221,7 +233,6 @@ var lodash = require('lodash'),
             // backup content so we don't need to call the renderer a second
             // time when really rendering the column
             row._renderedContent.data[column.id] = Object.isObject(content) ? content.content : content;
-            row._renderedContent.colSpan[column.id] = Object.isObject(content) ? content.colSpan : 1;
             row._renderedContent.dataHeight[column.id] = height;
 
             // check max row height
